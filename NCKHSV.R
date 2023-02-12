@@ -134,21 +134,47 @@ columns_new <- list('TSXXDD = XDDDT2015 + DDDH',
                     'LEV = NPT/TTS', 
                     'SIZE = ln(TTS)',
                     'ROA = NI/TTS',
+                    'Tangible = TSCDHH/TTS',
+                    
+                    
+                    'SDEBT = NNH/TTS',
+                    'deltaSDEBT = SDEBT - lag(SDEBT,1)',
+                    'NWC = (TSNH - NNH - TVTDT)/ TTS',
+                    'deltaNWC = NWC - lag(NWC,1)',
                     
                     'lagINVEST1 = lag(INVEST1,1)',
                     'lagINVEST2 = lag(INVEST2,1)',
-                    'lagMP = lag(MP_HighDep,1)')
+                    'lagMPDep = lag(( MP_HighDep + MP_LowDep)/2,1)',
+                    'lagMPLend = lag(( MP_HighLendSBV + MP_LowLendSBV)/2,1)',
+                    
+                    
+                    # CAC BIEN DELTA VA SQR
+                    'deltaINVEST1 = INVEST1 - lag(INVEST1,1)',
+                    'deltaINVEST2 = INVEST2 - lag(INVEST2,1)',
+                    'deltaCASH = CASH - lag(CASH,1)',
+                    'sqrINVEST1 = INVEST1 ^ 2',
+                    'sqrINVEST2 = INVEST2 ^ 2',
+                    
+                    # CASH FLOW (cash flow nay la cash flow dung trong mo hinh khac voi cash flow trong code o tren)
+                    'CASHFLOW = CF/TTS',
+                    
+                    # BIEN TICH
+                    'MPCF = lagMPDep * CASHFLOW',
+                    'MPCASH = lagMPDep * CASH')
+
+# CAUTIONS: Nho chu y khoang trang khi them bien
 
 for (x in columns_new) {
   lhs <- str_remove(strsplit(x,split =  "=")[[1]][1], " ")
   rhs <- strsplit(x,split =  "=")[[1]][2]
   columns_select <- c(columns_select, lhs)
   df_temp = mutate(.data = df_temp, !!lhs := !!parse_quo(rhs, env = caller_env()))
+  print(x)
 }
 
 dREGC <- df_temp %>% 
   select(all_of(columns_select)) %>% 
-  subset(lagMP != 'NA' & 
+  subset(lagMPDep != 'NA' & 
            lagINVEST1 != 'NA' & 
            lagINVEST1 != '-Inf' & 
            INVEST1 != '-Inf' & 
@@ -157,8 +183,8 @@ dREGC <- df_temp %>%
 
 # WINSOR MP
 
-dtemp1 <- dREGC %>% subset(select=-c(Firm,Year, lagMP))
-dtemp2 <- dREGC %>% subset(select=c(Firm,Year,lagMP))
+dtemp1 <- dREGC %>% subset(select=-c(Firm,Year, lagMPDep))
+dtemp2 <- dREGC %>% subset(select=c(Firm,Year,lagMPDep))
 dtemp1 <- winsor(dtemp1,trim = 0.01)
 dREGC <- cbind(dtemp2,dtemp1)
 rm(dtemp1,dtemp2)
@@ -169,19 +195,130 @@ rm(lhs,rhs,x,columns_select,df_temp,columns_new)
 
 #-----{ HOI QUY }-------
 
-regOLS1 <- lm(INVEST1 ~ lagMP+ lagINVEST1+ LEV + SIZE + ROA +  CASH +  Bool_SOE + as.factor(Year) ,data=dREGC)
+depVar1 <- 'INVEST1'
+depVar2 <- 'INVEST2'
+indepVar <- 'lagINVEST1+ lagMPDep+ LEV + SIZE + ROA +  CASH +  Bool_SOE + as.factor(Year)'
+
+regOLS1 <- lm(INVEST1 ~ lagINVEST1+ lagMPDep+ LEV + SIZE + ROA +  CASH +  Bool_SOE + as.factor(Year) ,data=dREGC)
 summary(regOLS1)
 
-regOLS2 <- lm(INVEST2 ~ lagMP+ lagINVEST2+ LEV + SIZE + ROA +  CASH +  Bool_SOE + as.factor(Year) ,data=dREGC)
+regOLS2 <- lm(INVEST2 ~ lagINVEST2+ lagMPDep+ LEV + SIZE + ROA +  CASH +  Bool_SOE + as.factor(Year) ,data=dREGC)
 summary(regOLS2)
 
+regOLS3 <- lm(INVEST1 ~ lagINVEST1+ lagMPLend+ LEV + SIZE + ROA +  CASH +  Bool_SOE + as.factor(Year) ,data=dREGC)
+summary(regOLS3)
+
+regOLS4 <- lm(INVEST2 ~ lagINVEST2+ lagMPLend+ LEV + SIZE + ROA +  CASH +  Bool_SOE + as.factor(Year) ,data=dREGC)
+summary(regOLS4)
 
 
-#-----{ FINANCIAL CONsTRAINTS }------
+Table2 <- list(regOLS1,regOLS2)
+remove(depVar1, depVar2,indepVar, regOLS1, regOLS2, regOLS3, regOLS4)
+
+#-----{ FINANCIAL CONSTRAINTS }------
 
 devar   <- c('INVEST1', 'INVEST2')
-indevar <- 'lagMP+ lagINVEST+ SIZE+ CASH+ LEV+ ROA + Firm + as.factor(Year)'
+indeVar <- 'lagMPDep+ CASH+ LEV+ ROA + as.factor(Year)'
+conditionVar <- c('Bool_SOE == 1','Bool_SOE == 0', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)')
 
+
+for (i in 1:2) {
+  for (x in 1:4){
+    M  <- formula(paste( devar[i],"~", indeVar))
+    reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+    assign(paste0('REG',i,x),reg);
+  }
+}
+Table3 <- list(REG11,REG12,REG13,REG14,
+               REG21,REG22,REG23,REG24)
+
+rm(REG11,REG12,REG13,REG14,REG21,REG22,REG23,REG24, indeVar, devar, conditionVar,i,M,x,reg)
+
+
+
+#-----{ CASH-CASH FLOW SENSITIVITY }------
+
+devar   <- c('deltaCASH')
+indepVar <- c('CASHFLOW + lagMPDep + MPCF + SIZE + deltaNWC + deltaSDEBT ') # Thieu Tobin Q, CAPEX
+conditionVar <- c('Bool_SOE == 1','Bool_SOE == 0', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)')
+
+for (x in 1:4){
+  M  <- formula(paste0( devar,"~", indepVar))
+  reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+  assign(paste0('REG',x),reg);
+}             
+
+Table6 <- list(REG1, REG2, REG3, REG4)
+rm(x, REG1, REG2, REG3, REG4, devar, indepVar, conditionVar, M,reg)
+
+#-----{ INVESTMENT SMOOTHING }------
+
+devar   <- c('deltaINVEST1', 'deltaINVEST2')
+indepVar <- c('INVEST1 + sqrINVEST1 + lagMPDep + deltaCASH',
+              'INVEST2 + sqrINVEST2 + lagMPDep + deltaCASH' )
+
+conditionVar <- c('Bool_SOE == 1','Bool_SOE == 0', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)')
+
+for (i in 1:2) {
+  for (x in 1:4){
+    M  <- formula(paste0( devar[i],"~", indepVar[i]))
+    reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+    assign(paste0('REG',i,x),reg);
+  }
+}
+
+Table7 <- list(REG11,REG12,REG13,REG14,
+               REG21,REG22,REG23,REG24)
+rm(REG11,REG12,REG13,REG14,REG21,REG22,REG23,REG24, indepVar, devar, conditionVar,i,M,x, reg)
+
+#-----{ BANG KET QUA }----------------------------------------------------------
+
+
+# TABLE 1
+
+Table1 <- dREGC %>% select(INVEST1, INVEST2, lagINVEST1, lagINVEST2, lagMPDep, LEV, SIZE, ROA, CASH, Bool_SOE) %>% as.data.frame()
+stargazer(Table1, title = "Table 1. Variable definitions and descriptive statistics",
+          summary = T,
+          summary.stat =c("n","mean","median", "min", "max", "sd"), digits = 4,
+          type = 'text', style = 'all', out = 'Table1.htm')
+
+
+# TABLE 2
+
+stargazer(Table2, type = 'text',
+          omit = c('Year', 'Firm'), align = TRUE,
+          intercept.bottom = T, style = 'all', 
+          title = 'Table 2 Baseline results - monetary policy effects on corporate investment', 
+          digits = 3, notes.align = 'c', notes.append = T,
+          report = 'v*c*t', out = 'Table2.htm')
+
+
+# TABLE 3
+
+stargazer(Table3, type = 'text', column.labels = c('SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small','SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small'),
+          covariate.labels = c('MP'),
+          omit = c('Year','Firm'), align = TRUE, out = 'Table3.htm',
+          intercept.bottom = T, style = 'all', title = 'Table 3 Financial constraints, cash holdings and corporate investment.', digits = 3, notes.align = 'c', notes.append = T,
+          report = 'v*c*t')
+
+
+# TABLE 6
+
+stargazer(Table6, type = 'text', column.labels = c('SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small','SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small'),
+          omit = c('Year','Firm'), align = TRUE, out = 'Table6.htm',
+          intercept.bottom = T, style = 'all', title = 'Table 6 Monetary policy and cash-cash flow sensitivity.', digits = 3, notes.align = 'c', notes.append = T,
+          report = 'v*c*t')
+
+
+# TABLE 7
+
+stargazer(Table7, type = 'text', column.labels = c('SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small','SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small'),
+          omit = c('Year','Firm'), align = TRUE, out = 'Table7.htm',
+          intercept.bottom = T, style = 'all', title = 'Table 7 Monetary policy, cash holding and investment smoothing.', digits = 3, notes.align = 'c', notes.append = T,
+          report = 'v*c*t')
+
+
+#------{ LEGACY }---------------------------------------------------------------
 
 for (i in 1:2) {
   M  <- formula(paste( devar[i],"~", indevar))
@@ -191,27 +328,4 @@ for (i in 1:2) {
   reg <- coeftest(reg, reg_formula)
   assign(paste0("reg",i), reg); 
 }
-
-
-
-#-----{ BANG KET QUA }-------
-
-
-# TABLE 1
-
-Table1 <- dREGC %>% select(INVEST1, INVEST2, lagINVEST1, lagINVEST2, lagMP, LEV, SIZE, ROA, CASH, Bool_SOE) %>% as.data.frame()
-stargazer(Table1, title = "Table 1. Statistical summary",
-          summary = T, no.space = T,
-          summary.stat =c("n","mean","median", "min", "max", "sd"), digits = 4,
-          type = 'text')
-
-
-# TABLE 2
-
-stargazer(regOLS1, regOLS2, type = 'text',
-          omit = c('Year'),
-          intercept.bottom = T, style = 'all', title = 'Table 2', digits = 3, notes.align = 'c', notes.append = T,
-          report = 'v*c*t')
-
-
 
