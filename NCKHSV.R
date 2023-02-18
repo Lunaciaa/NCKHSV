@@ -183,20 +183,29 @@ columns_new <- list('TSXXDD = XDDDT2015 + DDDH',
                     'BV = TTS-NPT-TSCDVH',
                     'Q = MarketCap/BV',
                     
+                    # BIEN TICH VOI TOBIN Q
+                    'CASHQ = CASH * Q',
+                    'CASHQMP = MPCASH * Q',
+                    
                     # Kaplan-Zingales index
                     # CAUTIONS: ko biet co bien do tre o day hay ko
-                    'KZ = -1.001909* (CF/BV) +0.2826389* Q -39.3678 *(Div/BV) -1.314759 * ((TVTDT+TSDTNH)/BV) + 3.139193 * ((NNH+NDH)/TTS)')
+                    'KZ = -1.001909* (CF/BV) +0.2826389* Q -39.3678 *(Div/BV) -1.314759 * ((TVTDT+TSDTNH)/BV) + 3.139193 * ((NNH+NDH)/TTS)',
+                    
+                    # CRISIS
+                    'CRISIS = case_when(Year >= 2008 & Year <= 2010 ~ 1, Year > 2010 ~ 0)'
+                    )
 
 # CAUTIONS: Nho chu y khoang trang khi them bien
 
 for (x in columns_new) {
-  lhs <- str_remove(strsplit(x,split =  "=")[[1]][1], " ")
-  rhs <- strsplit(x,split =  "=")[[1]][2]
+  lhs <- str_remove(regmatches(x, regexpr("=",x), invert = TRUE)[[1]][1], " ")
+  rhs <- regmatches(x, regexpr("=",x), invert = TRUE)[[1]][2] # " =.* " TACH DAU BANG ( '=' ) VA IGNORE NHUNG DAU BANG CON LAI
   columns_select <- c(columns_select, lhs)
   df_temp = mutate(.data = df_temp, !!lhs := !!parse_quo(rhs, env = caller_env()))
   print(x)
 }
 
+ 
 dREGC <- df_temp %>% 
   select(all_of(columns_select)) %>% 
   subset(lagMPDep != 'NA' & 
@@ -328,6 +337,34 @@ Table7 <- list(REG1, REG2,
 
 rm(REG1,REG2,REG11,REG12,REG13,REG14,REG15, REG16,REG21,REG22,REG23,REG24,REG25, REG26, indepVar, devar, conditionVar,i,M,x, reg)
 
+
+
+#-------{ Monetary policy, cash holding and investment efficiencies. }-----------
+
+devar   <- c('INVEST1', 'INVEST2')
+indepVar <- c('Q + CASH + lagMPDep + CASHQ + CASHQMP + CRISIS + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Tangible + Bool_SOE')
+
+conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)','SIZE <= median(SIZE)', 'SIZE > median(SIZE)','Bool_SOE == 1','Bool_SOE == 0')
+
+for (i in 1:2) {
+  for (x in 1:6){
+    M  <- formula(paste0( devar[i],"~", indepVar))
+    reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+    assign(paste0('REG',i,x),reg);
+  }
+}
+
+REG1 <- lm(formula = paste0(devar[1],'~',indepVar),data= dREGC)
+REG2 <- lm(formula = paste0(devar[2],'~',indepVar),data= dREGC)
+
+Table8 <- list(REG1, REG2,
+               REG11,REG12,REG13,REG14, REG15, REG16,
+               REG21,REG22,REG23,REG24, REG25, REG26)
+
+rm(REG1,REG2,REG11,REG12,REG13,REG14,REG15, REG16,REG21,REG22,REG23,REG24,REG25, REG26, indepVar, devar, conditionVar,i,M,x, reg)
+
+
+
 #-----{ BANG KET QUA }----------------------------------------------------------
 
 
@@ -382,6 +419,14 @@ stargazer(Table6, type = 'text', column.labels = c('All Sample', 'KZ-Low', 'KZ-H
 stargazer(Table7, type = 'text', column.labels = c('All Sample','All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
           omit = c('Year','Firm'), align = TRUE, out = 'Table7.htm',
           intercept.bottom = T, style = 'all', title = 'Table 7 Monetary policy, cash holding and investment smoothing.', digits = 3, notes.align = 'c', notes.append = T,
+          report = 'v*c*t')
+
+
+# TABLE 8
+
+stargazer(Table8, type = 'text', column.labels = c('All Sample','All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
+          omit = c('Year','Firm'), align = TRUE, out = 'Table8.htm',
+          intercept.bottom = T, style = 'all', title = 'Table 8 Monetary policy, cash holding and investment efficiencies..', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
 
