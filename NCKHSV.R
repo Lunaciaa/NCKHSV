@@ -1,6 +1,5 @@
 #---------{ SET DUONG DAN, KHAI BAO THU VIEN }-------
 
-
 setwd('C:\\Users\\Admin\\Desktop\\Project\\Python\\Pj-FinProDataSort')
 
 library(dplyr)
@@ -60,21 +59,25 @@ rm(df_gdp, df_interest, col_names, dep_col_names, lend_col_names, PATH_INTEREST,
 PATH_BCTC = 'Output/dp_BCTC.csv'
 PATH_SOE = 'Output/SOE.csv'
 PATH_BRANCH = 'Output/Branch.csv'
+PATH_MARKETCAP = 'Output/MarketCap.csv'
 
 # CAC COT CAN LAY
 colNames_select = c('Ticker', 'Year','Exchange','1', '2', '5',
-                    '37', '46','50','66','67',
-                    '68','83','140','144', '150',
-                    '151', '170')
+                    '37', '43', '46','50','66',
+                    '67','68','83','140','144',
+                    '149','150','151', '170', '171',
+                    '172','184')
 colNames_decrypt = c('Firm', 'Year','Exchange','TSNH','TVTDT', 'TSDTNH',
-                     'TSCDHH', 'XDDDT2015','DDDH', 'TTS','NPT',
-                     'NNH','NDH', 'EBIT','NI', 'NIBDA',
-                     'DA','CF')
+                     'TSCDHH','TSCDVH', 'XDDDT2015','DDDH', 'TTS',
+                     'NPT','NNH','NDH', 'EBIT','NI', 
+                     'CF','NIBDA','DA','ICF', 'BUYTSCD',
+                     'SELLTSCD','Div')
 # Detail:
 # 1 Tai san ngan han
 # 2 tien va cac khoan tuong duong tien
 # 5 Tai san dau tu ngan han
 # 37 TSCD HH
+# 43 TSCD VH
 # 46 Xay dung do dang truoc 2015 
 # 50 Tai san do dang dai han
 # 66 Total Asset
@@ -83,9 +86,11 @@ colNames_decrypt = c('Firm', 'Year','Exchange','TSNH','TVTDT', 'TSDTNH',
 # 83 No dai han
 # 140 EBIT
 # 144 Net Income
+# 149 Luu chuyen tien te thuan tu hoat dong kinh doanh
 # 150 operating income before depreciation
 # 151 Depreciation
 # 170 Luu chuyen tien te thuan cua hoat dong dau tu
+# 184 Co tuc da tra
 
 # DANH SACH CAC COT TRONG BCTC
 colNames_BCTC <- read.xlsx('RCode/Col.xlsx', colNames = FALSE)
@@ -113,7 +118,13 @@ dBranch <- read.csv(PATH_BRANCH)
 colnames(dBranch) <- c('Firm', 'Nganh')
 dMerged <- merge(dMerged, dBranch, by = c('Firm'))
 
-rm(MP, dSOE,dBranch, PATH_SOE, PATH_BRANCH)
+dMarketCap <- read.csv(PATH_MARKETCAP)
+colnames(dMarketCap) <- c('Firm', 'Year', 'MarketCap')
+dMarketCap <- dMarketCap %>% subset(Year <= 2021 & Year >= 2008)
+dMarketCap$MarketCap <-  dMarketCap$MarketCap * 1000000000
+dMerged <- merge(dMerged,dMarketCap, by = c('Firm', 'Year'))
+
+rm(MP, dSOE,dBranch, dMarketCap, PATH_MARKETCAP, PATH_SOE, PATH_BRANCH)
 
 
 
@@ -129,12 +140,13 @@ columns_select <- c('Firm', 'Year', 'Bool_SOE')
 # THEM BIEN MOI
 columns_new <- list('TSXXDD = XDDDT2015 + DDDH', 
                     'INVEST1 = (TSCDHH + TSXXDD)/TTS',
-                    'INVEST2 = -CF/TTS',
+                    'INVEST2 = -ICF/TTS',
                     'CASH = (TVTDT+TSDTNH)/TTS',
                     'LEV = NPT/TTS', 
                     'SIZE = ln(TTS)',
                     'ROA = NI/TTS',
                     'Tangible = TSCDHH/TTS',
+                    'CAPEX = BUYTSCD + SELLTSCD',
                     
                     
                     'SDEBT = NNH/TTS',
@@ -147,6 +159,9 @@ columns_new <- list('TSXXDD = XDDDT2015 + DDDH',
                     'lagMPDep = lag(( MP_HighDep + MP_LowDep)/2,1)',
                     'lagMPLend = lag(( MP_HighLendSBV + MP_LowLendSBV)/2,1)',
                     
+                    # MP WITHOUT LAG
+                    'MPDep = (MP_HighDep + MP_LowDep)/2',
+                    'MPLend = (MP_HighLendSBV + MP_LowLendSBV)/2',
                     
                     # CAC BIEN DELTA VA SQR
                     'deltaINVEST1 = INVEST1 - lag(INVEST1,1)',
@@ -155,12 +170,22 @@ columns_new <- list('TSXXDD = XDDDT2015 + DDDH',
                     'sqrINVEST1 = INVEST1 ^ 2',
                     'sqrINVEST2 = INVEST2 ^ 2',
                     
-                    # CASH FLOW (cash flow nay la cash flow dung trong mo hinh khac voi cash flow trong code o tren)
+                    # CASH FLOW (cash flow nay la cash flow dung trong mo hinh khac voi cash flow trong code o tren), GROWTH
                     'CASHFLOW = CF/TTS',
+                    'GROWTH = (CF-lag(CF))/lag(CF)',
                     
                     # BIEN TICH
                     'MPCF = lagMPDep * CASHFLOW',
-                    'MPCASH = lagMPDep * CASH')
+                    'MPCASH = lagMPDep * CASH',
+                    'deltaCASHMP = lagMPDep * deltaCASH',
+                    
+                    # TOBIN Q
+                    'BV = TTS-NPT-TSCDVH',
+                    'Q = MarketCap/BV',
+                    
+                    # Kaplan-Zingales index
+                    # CAUTIONS: ko biet co bien do tre o day hay ko
+                    'KZ = -1.001909* (CF/BV) +0.2826389* Q -39.3678 *(Div/BV) -1.314759 * ((TVTDT+TSDTNH)/BV) + 3.139193 * ((NNH+NDH)/TTS)')
 
 # CAUTIONS: Nho chu y khoang trang khi them bien
 
@@ -197,9 +222,9 @@ rm(lhs,rhs,x,columns_select,df_temp,columns_new)
 
 depVar1 <- 'INVEST1'
 depVar2 <- 'INVEST2'
-indepVar <- 'lagINVEST1+ lagMPDep+ LEV + SIZE + ROA +  CASH +  Bool_SOE + as.factor(Year)'
+indepVar <- 'lagINVEST1+ lagMPDep+ LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)'
 
-regOLS1 <- lm(INVEST1 ~ lagINVEST1+ lagMPDep+ LEV + SIZE + ROA +  CASH +  Bool_SOE + as.factor(Year) ,data=dREGC)
+regOLS1 <- lm(formula = paste0(depVar1,'~',indepVar),data=dREGC)
 summary(regOLS1)
 
 regOLS2 <- lm(INVEST2 ~ lagINVEST2+ lagMPDep+ LEV + SIZE + ROA +  CASH +  Bool_SOE + as.factor(Year) ,data=dREGC)
@@ -235,41 +260,73 @@ Table3 <- list(REG11,REG12,REG13,REG14,
 rm(REG11,REG12,REG13,REG14,REG21,REG22,REG23,REG24, indeVar, devar, conditionVar,i,M,x,reg)
 
 
+#-----{ CORPORATE INVESTMENT: SOEs vs non.SOEs }-------------
+
+devar   <- c('INVEST1', 'INVEST2')
+indeVar <- 'lagMPDep+ CASH+ MPCASH + as.factor(Year)'
+conditionVar <- c('Bool_SOE == 1','Bool_SOE == 0')
+
+for (i in 1:2) {
+  for (x in 1:2){
+    M  <- formula(paste( devar[i],"~", indeVar))
+    reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+    assign(paste0('REG',i,x),reg);
+  }
+}
+
+Table4 <- list(REG11,REG12,
+               REG21,REG22)
+
+rm(REG11,REG12,REG21,REG22, indeVar, devar, conditionVar,i,M,x,reg)
+
+
 
 #-----{ CASH-CASH FLOW SENSITIVITY }------
 
 devar   <- c('deltaCASH')
-indepVar <- c('CASHFLOW + lagMPDep + MPCF + SIZE + deltaNWC + deltaSDEBT ') # Thieu Tobin Q, CAPEX
-conditionVar <- c('Bool_SOE == 1','Bool_SOE == 0', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)')
+indepVar <- c('CASHFLOW + lagMPDep + MPCF + SIZE + deltaNWC + deltaSDEBT + Q + CAPEX')
+conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)','SIZE <= median(SIZE)', 'SIZE > median(SIZE)','Bool_SOE == 1','Bool_SOE == 0')
 
-for (x in 1:4){
+for (x in 1:6){
   M  <- formula(paste0( devar,"~", indepVar))
   reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
   assign(paste0('REG',x),reg);
 }             
 
-Table6 <- list(REG1, REG2, REG3, REG4)
-rm(x, REG1, REG2, REG3, REG4, devar, indepVar, conditionVar, M,reg)
+REG <- lm(formula = paste0(devar,'~',indepVar),data= dREGC)
+
+Table6 <- list(REG,REG1, REG2, REG3, REG4, REG5, REG6)
+
+rm(x, 
+   REG, REG1, REG2, REG3, REG4, REG5,REG6, 
+   devar, indepVar, conditionVar, M, reg)
+
+
 
 #-----{ INVESTMENT SMOOTHING }------
 
 devar   <- c('deltaINVEST1', 'deltaINVEST2')
-indepVar <- c('INVEST1 + sqrINVEST1 + lagMPDep + deltaCASH',
-              'INVEST2 + sqrINVEST2 + lagMPDep + deltaCASH' )
+indepVar <- c('INVEST1 + sqrINVEST1 + lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)', 
+              'INVEST2 + sqrINVEST2 + lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)' )
 
-conditionVar <- c('Bool_SOE == 1','Bool_SOE == 0', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)')
+conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)','SIZE <= median(SIZE)', 'SIZE > median(SIZE)','Bool_SOE == 1','Bool_SOE == 0')
 
 for (i in 1:2) {
-  for (x in 1:4){
+  for (x in 1:6){
     M  <- formula(paste0( devar[i],"~", indepVar[i]))
     reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
     assign(paste0('REG',i,x),reg);
   }
 }
 
-Table7 <- list(REG11,REG12,REG13,REG14,
-               REG21,REG22,REG23,REG24)
-rm(REG11,REG12,REG13,REG14,REG21,REG22,REG23,REG24, indepVar, devar, conditionVar,i,M,x, reg)
+REG1 <- lm(formula = paste0(devar[1],'~',indepVar[1]),data= dREGC)
+REG2 <- lm(formula = paste0(devar[2],'~',indepVar[2]),data= dREGC)
+
+Table7 <- list(REG1, REG2,
+               REG11,REG12,REG13,REG14, REG15, REG16,
+               REG21,REG22,REG23,REG24, REG25, REG26)
+
+rm(REG1,REG2,REG11,REG12,REG13,REG14,REG15, REG16,REG21,REG22,REG23,REG24,REG25, REG26, indepVar, devar, conditionVar,i,M,x, reg)
 
 #-----{ BANG KET QUA }----------------------------------------------------------
 
@@ -302,9 +359,19 @@ stargazer(Table3, type = 'text', column.labels = c('SOE', 'Non-SOE', 'SIZE-Big',
           report = 'v*c*t')
 
 
+# TABLE 4
+
+stargazer(Table4, type = 'text', column.labels = c('SOE', 'Non-SOE','SOE', 'Non-SOE'),
+          covariate.labels = c('MP'),
+          omit = c('Year','Firm'), align = TRUE, 
+          intercept.bottom = T, style = 'all', title = 'Table 4 Corporate investment: SOEs vs. non-SOEs.', digits = 3, notes.align = 'c', notes.append = T,
+          report = 'v*c*t')
+
+
+
 # TABLE 6
 
-stargazer(Table6, type = 'text', column.labels = c('SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small','SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small'),
+stargazer(Table6, type = 'text', column.labels = c('All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
           omit = c('Year','Firm'), align = TRUE, out = 'Table6.htm',
           intercept.bottom = T, style = 'all', title = 'Table 6 Monetary policy and cash-cash flow sensitivity.', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
@@ -312,7 +379,7 @@ stargazer(Table6, type = 'text', column.labels = c('SOE', 'Non-SOE', 'SIZE-Big',
 
 # TABLE 7
 
-stargazer(Table7, type = 'text', column.labels = c('SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small','SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small'),
+stargazer(Table7, type = 'text', column.labels = c('All Sample','All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
           omit = c('Year','Firm'), align = TRUE, out = 'Table7.htm',
           intercept.bottom = T, style = 'all', title = 'Table 7 Monetary policy, cash holding and investment smoothing.', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
