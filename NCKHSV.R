@@ -252,27 +252,35 @@ remove(depVar1, depVar2,indepVar, regOLS1, regOLS2, regOLS3, regOLS4)
 #-----{ FINANCIAL CONSTRAINTS }------
 
 devar   <- c('INVEST1', 'INVEST2')
-indeVar <- 'lagMPDep+ CASH+ LEV+ ROA + as.factor(Year)'
-conditionVar <- c('Bool_SOE == 1','Bool_SOE == 0', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)')
+indeVar <- c('lagMPDep+ CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)'
+             ,'lagMPDep+ CASH + MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)')
+conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)')
 
 
 for (i in 1:2) {
   for (x in 1:4){
-    M  <- formula(paste( devar[i],"~", indeVar))
+    M  <- formula(paste( devar[i],"~", indeVar[2]))
     reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
     assign(paste0('REG',i,x),reg);
   }
 }
-Table3 <- list(REG11,REG12,REG13,REG14,
+
+REG1 <- lm(formula = paste0(devar[1],'~',indeVar[1]),data= dREGC)
+REG2 <- lm(formula = paste0(devar[1],'~',indeVar[2]),data= dREGC)
+REG3 <- lm(formula = paste0(devar[2],'~',indeVar[1]),data= dREGC)
+REG4 <- lm(formula = paste0(devar[2],'~',indeVar[2]),data= dREGC)
+  
+Table3 <- list(REG1, REG2, REG3, REG4,
+               REG11,REG12,REG13,REG14,
                REG21,REG22,REG23,REG24)
 
-rm(REG11,REG12,REG13,REG14,REG21,REG22,REG23,REG24, indeVar, devar, conditionVar,i,M,x,reg)
+rm(REG1, REG2, REG3, REG4,REG11,REG12,REG13,REG14,REG21,REG22,REG23,REG24, indeVar, devar, conditionVar,i,M,x,reg)
 
 
 #-----{ CORPORATE INVESTMENT: SOEs vs non.SOEs }-------------
 
 devar   <- c('INVEST1', 'INVEST2')
-indeVar <- 'lagMPDep+ CASH+ MPCASH + as.factor(Year)'
+indeVar <- 'lagMPDep+ CASH+ MPCASH'
 conditionVar <- c('Bool_SOE == 1','Bool_SOE == 0')
 
 for (i in 1:2) {
@@ -314,9 +322,10 @@ rm(x,
 
 #-----{ INVESTMENT SMOOTHING }------
 
+# CAUTIONS: deltaCASH duoc them vao bien doc lap, nhung trong mo hinh trong bai tham khao goc ko co
 devar   <- c('deltaINVEST1', 'deltaINVEST2')
-indepVar <- c('INVEST1 + sqrINVEST1 + lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)', 
-              'INVEST2 + sqrINVEST2 + lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)' )
+indepVar <- c('deltaCASH + INVEST1 + sqrINVEST1 +  lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)', 
+              'deltaCASH + INVEST2 + sqrINVEST2 +  lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)' )
 
 conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)','SIZE <= median(SIZE)', 'SIZE > median(SIZE)','Bool_SOE == 1','Bool_SOE == 0')
 
@@ -389,9 +398,9 @@ stargazer(Table2, type = 'text',
 
 # TABLE 3
 
-stargazer(Table3, type = 'text', column.labels = c('SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small','SOE', 'Non-SOE', 'SIZE-Big', 'SIZE-Small'),
+stargazer(Table3, type = 'text', column.labels = c('All Sample [1]','All Sample [1]','All Sample [2]','All Sample [2]','KZ-Low', 'KZ-High', 'SIZE-Big', 'SIZE-Small','KZ-Low', 'KZ-High', 'SIZE-Big', 'SIZE-Small'),
           covariate.labels = c('MP'),
-          omit = c('Year','Firm'), align = TRUE, out = 'Table3.htm',
+          omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), align = TRUE, out = 'Table3.htm',
           intercept.bottom = T, style = 'all', title = 'Table 3 Financial constraints, cash holdings and corporate investment.', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
@@ -400,7 +409,7 @@ stargazer(Table3, type = 'text', column.labels = c('SOE', 'Non-SOE', 'SIZE-Big',
 
 stargazer(Table4, type = 'text', column.labels = c('SOE', 'Non-SOE','SOE', 'Non-SOE'),
           covariate.labels = c('MP'),
-          omit = c('Year','Firm'), align = TRUE, 
+          omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), align = TRUE, 
           intercept.bottom = T, style = 'all', title = 'Table 4 Corporate investment: SOEs vs. non-SOEs.', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
@@ -409,7 +418,7 @@ stargazer(Table4, type = 'text', column.labels = c('SOE', 'Non-SOE','SOE', 'Non-
 # TABLE 6
 
 stargazer(Table6, type = 'text', column.labels = c('All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
-          omit = c('Year','Firm'), align = TRUE, out = 'Table6.htm',
+          omit = c('Year','Firm','SIZE', 'deltaNWC', 'deltaSDEBT', 'Q','CAPEX'), align = TRUE, out = 'Table6.htm',
           intercept.bottom = T, style = 'all', title = 'Table 6 Monetary policy and cash-cash flow sensitivity.', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
@@ -417,7 +426,7 @@ stargazer(Table6, type = 'text', column.labels = c('All Sample', 'KZ-Low', 'KZ-H
 # TABLE 7
 
 stargazer(Table7, type = 'text', column.labels = c('All Sample','All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
-          omit = c('Year','Firm'), align = TRUE, out = 'Table7.htm',
+          omit = c('Year','Firm','LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), align = TRUE, out = 'Table7.htm',
           intercept.bottom = T, style = 'all', title = 'Table 7 Monetary policy, cash holding and investment smoothing.', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
@@ -425,7 +434,7 @@ stargazer(Table7, type = 'text', column.labels = c('All Sample','All Sample', 'K
 # TABLE 8
 
 stargazer(Table8, type = 'text', column.labels = c('All Sample','All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
-          omit = c('Year','Firm'), align = TRUE, out = 'Table8.htm',
+          omit = c('Year','Firm','CRISIS', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Tangible', 'Bool_SOE'), align = TRUE, out = 'Table8.htm',
           intercept.bottom = T, style = 'all', title = 'Table 8 Monetary policy, cash holding and investment efficiencies..', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
