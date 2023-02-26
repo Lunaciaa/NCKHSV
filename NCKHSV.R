@@ -250,9 +250,22 @@ remove(depVar1, depVar2,indepVar, regOLS1, regOLS2, regOLS1_formula, regOLS2_for
 
 #-----{ FINANCIAL CONSTRAINTS }------
 
+# TO HOP
+# FY : FY
+# FY : YI
+# FY : I
+
+# YI : FY
+# YI : YI
+# YI : I
+
+# I : FY
+# I : YI
+# I : I
+
 devar   <- c('INVEST1', 'INVEST2')
-indeVar <- c('lagMPDep+ CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year) + Firm'
-             ,'lagMPDep+ CASH + MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year) + Firm')
+indeVar <- c('lagMPDep+ CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)'
+             ,'lagMPDep+ CASH + MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)')
 conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)')
 
 
@@ -260,22 +273,27 @@ for (i in 1:2) {
   for (x in 1:4){
     M  <- formula(paste( devar[i],"~", indeVar[2]))
     reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
-    reg_formula <- cluster.vcov(reg, ~ Firm + Year)
+    reg_formula <- cluster.vcov(reg, ~ Firm + Year )
     reg <- coeftest(reg, reg_formula)
     assign(paste0('REG',i,x),reg);
   }
 }
 
-REG1 <- lm(formula = paste0(devar[1],'~',indeVar[1]),data= dREGC)
-REG2 <- lm(formula = paste0(devar[1],'~',indeVar[2]),data= dREGC)
-REG3 <- lm(formula = paste0(devar[2],'~',indeVar[1]),data= dREGC)
-REG4 <- lm(formula = paste0(devar[2],'~',indeVar[2]),data= dREGC)
+for (y in 1:2) {
+  for (z in 1:2) {
+    M  <- formula(paste( devar[y],"~", indeVar[z]))
+    reg <- lm(M, data=subset(dREGC))
+    reg_formula <- cluster.vcov(reg, ~ Firm + Year )
+    reg <- coeftest(reg, reg_formula)
+    assign(paste0('REGBase',y,z),reg);
+  }
+}
   
-Table3 <- list(REG1, REG2, REG3, REG4,
+Table3 <- list(REGBase11, REGBase12, REGBase21, REGBase22,
                REG11,REG12,REG13,REG14,
                REG21,REG22,REG23,REG24)
 
-rm(REG1, REG2, REG3, REG4,REG11,REG12,REG13,REG14,REG21,REG22,REG23,REG24, indeVar, devar, conditionVar,i,M,x,reg, reg_formula)
+rm(REGBase11, REGBase12, REGBase21, REGBase22,REG11,REG12,REG13,REG14,REG21,REG22,REG23,REG24, indeVar, devar, conditionVar,i,M,x,y,z,reg, reg_formula)
 
 
 #-----{ CORPORATE INVESTMENT: SOEs vs non.SOEs }------------- 
@@ -306,22 +324,28 @@ rm(REG11,REG12,REG21,REG22, indeVar, devar, conditionVar,i,M,x,reg)
 #-----{ CASH-CASH FLOW SENSITIVITY }------
 
 devar   <- c('deltaCASH')
-indepVar <- c('CASHFLOW + lagMPDep + MPCF + SIZE + deltaNWC + deltaSDEBT + Q + CAPEX')
+indepVar <- c('CASHFLOW + lagMPDep + MPCF + SIZE + deltaNWC + deltaSDEBT + Q + CAPEX + Firm + as.factor(Year)')
 conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)','SIZE <= median(SIZE)', 'SIZE > median(SIZE)','Bool_SOE == 1','Bool_SOE == 0')
 
 for (x in 1:6){
   M  <- formula(paste0( devar,"~", indepVar))
   reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+  reg_formula <- cluster.vcov(reg, ~ Firm + Year)
+  reg <- coeftest(reg, reg_formula)
   assign(paste0('REG',x),reg);
 }             
 
 REG <- lm(formula = paste0(devar,'~',indepVar),data= dREGC)
+REG_formula <- cluster.vcov(REG, ~ Firm + Year)
+REG <- coeftest(REG, REG_formula)
+
 
 Table6 <- list(REG,REG1, REG2, REG3, REG4, REG5, REG6)
 
 rm(x, 
    REG, REG1, REG2, REG3, REG4, REG5,REG6, 
-   devar, indepVar, conditionVar, M, reg)
+   devar, indepVar, conditionVar, M, reg,
+   REG_formula, reg_formula)
 
 
 
@@ -329,8 +353,8 @@ rm(x,
 
 # CAUTIONS: deltaCASH duoc them vao bien doc lap, nhung trong mo hinh trong bai tham khao goc ko co
 devar   <- c('deltaINVEST1', 'deltaINVEST2')
-indepVar <- c('deltaCASH + INVEST1 + sqrINVEST1 +  lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)', 
-              'deltaCASH + INVEST2 + sqrINVEST2 +  lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)' )
+indepVar <- c('deltaCASH + INVEST1 + sqrINVEST1 +  lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)', 
+              'deltaCASH + INVEST2 + sqrINVEST2 +  lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)' )
 
 conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)','SIZE <= median(SIZE)', 'SIZE > median(SIZE)','Bool_SOE == 1','Bool_SOE == 0')
 
@@ -338,12 +362,21 @@ for (i in 1:2) {
   for (x in 1:6){
     M  <- formula(paste0( devar[i],"~", indepVar[i]))
     reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+    reg_formula <- cluster.vcov(reg, ~ Firm + Year)
+    reg <- coeftest(reg, reg_formula)
     assign(paste0('REG',i,x),reg);
   }
 }
 
 REG1 <- lm(formula = paste0(devar[1],'~',indepVar[1]),data= dREGC)
+REG1_formula <- cluster.vcov(REG1, ~ Firm + Year)
+REG1 <- coeftest(REG1, REG1_formula)
+
+
 REG2 <- lm(formula = paste0(devar[2],'~',indepVar[2]),data= dREGC)
+REG2_formula <- cluster.vcov(REG2, ~ Firm + Year)
+REG2 <- coeftest(REG2, REG2_formula)
+
 
 Table7 <- list(REG1, REG2,
                REG11,REG12,REG13,REG14, REG15, REG16,
@@ -356,7 +389,7 @@ rm(REG1,REG2,REG11,REG12,REG13,REG14,REG15, REG16,REG21,REG22,REG23,REG24,REG25,
 #-------{ Monetary policy, cash holding and investment efficiencies. }-----------
 
 devar   <- c('INVEST1', 'INVEST2')
-indepVar <- c('Q + CASH + lagMPDep + CASHQ + CASHQMP + CRISIS + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Tangible + Bool_SOE')
+indepVar <- c('Q + CASH + lagMPDep + CASHQ + CASHQMP + CRISIS + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Tangible + Bool_SOE + Firm + as.factor(Year)')
 
 conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)','SIZE <= median(SIZE)', 'SIZE > median(SIZE)','Bool_SOE == 1','Bool_SOE == 0')
 
@@ -364,12 +397,20 @@ for (i in 1:2) {
   for (x in 1:6){
     M  <- formula(paste0( devar[i],"~", indepVar))
     reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+    reg_formula <- cluster.vcov(reg, ~ Nganh + Year)
+    reg <- coeftest(reg, reg_formula)
     assign(paste0('REG',i,x),reg);
   }
 }
 
+
 REG1 <- lm(formula = paste0(devar[1],'~',indepVar),data= dREGC)
+REG1_formula <- cluster.vcov(REG1, ~ Firm + Year)
+REG1 <- coeftest(REG1, REG1_formula)
+
 REG2 <- lm(formula = paste0(devar[2],'~',indepVar),data= dREGC)
+REG2_formula <- cluster.vcov(REG2, ~ Firm + Year)
+REG2 <- coeftest(REG2, REG2_formula)
 
 Table8 <- list(REG1, REG2,
                REG11,REG12,REG13,REG14, REG15, REG16,
@@ -417,6 +458,7 @@ stargazer(Table1, title = "Table 1. Variable definitions and descriptive statist
 
 stargazer(Table2, type = 'text',
           omit = c('Year', 'Firm'), align = TRUE,
+          column.labels = c('Model 1', 'Model 2'),
           intercept.bottom = T, style = 'all', 
           title = 'Table 2 Baseline results - monetary policy effects on corporate investment', 
           digits = 3, notes.align = 'c', notes.append = T,
@@ -484,4 +526,7 @@ for (i in 1:2) {
   reg <- coeftest(reg, reg_formula)
   assign(paste0("reg",i), reg); 
 }
+
+
+
 
