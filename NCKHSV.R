@@ -14,6 +14,7 @@ library(SciViews)
 require(psych)
 #-----{ TINH TOAN MP }--------
 
+# ESTIMATE MP USING INTEREST RATE
 # KHAI BAO DUONG DAN
 PATH_GDP = 'RCode/MP/LS.csv'
 PATH_INTEREST = 'Output/Interest.csv'
@@ -53,6 +54,42 @@ rm(df_gdp, df_interest, col_names, dep_col_names, lend_col_names, PATH_INTEREST,
 
 
 
+# ESTIMATE MP USING M2 GROWTH RATE
+PATH_M2 = 'RCode/MP/M2.csv'
+
+df_m2 <- read.csv(PATH_M2) %>% as.data.frame()
+df_m2$M2Growth <- (df_m2$M2 - lag(df_m2$M2,1))/ lag(df_m2$M2)
+df_m2 <- df_m2 %>% subset(Year >= 2008, select = -c(M2)) %>% as.data.frame()
+
+rm(PATH_M2)
+
+
+
+# ESTIMATE MP USING QUANTITY RULE
+PATH_M2 = 'RCode/MP/M2.csv'
+PATH_GDP = 'RCode/MP/LS.csv'
+
+df_gdp <- read.csv(PATH_GDP) %>% as.data.frame() %>% subset(Year >=2002)
+M2 <- read.csv(PATH_M2) %>% as.data.frame()
+M2$M2Growth <- (M2$M2 - lag(M2$M2,1))/ lag(M2$M2)
+M2$lagM2Growth <- lag(M2$M2Growth,1)
+M2 <- M2 %>% subset(Year >= 2002)
+
+
+BienPhuThuoc <- M2$M2Growth
+BienDocLap1 <- M2$lagM2Growth
+BienDocLap2 <- df_gdp$Inflation 
+BienDocLap3 <- df_gdp$OutGap 
+reg.c <- lm(BienPhuThuoc ~ BienDocLap1+BienDocLap2+BienDocLap3)
+
+EstimateM2 <- reg.c$fitted.values %>% as.data.frame()
+EstimateM2$Year <- seq(2002,2021)
+colnames(EstimateM2) <- c('M2Est', 'Year')
+EstimateM2 <- subset(EstimateM2, EstimateM2$Year >= 2008)
+
+
+rm(M2,PATH_M2,PATH_GDP,BienPhuThuoc, BienDocLap1, BienDocLap2, BienDocLap3, reg.c, df_gdp)
+
 #-----{ XU LY DATA BCTC }--------
 
 # KHAI BAO DUONG DAN
@@ -91,6 +128,7 @@ colNames_decrypt = c('Firm', 'Year','Exchange','TSNH','TVTDT', 'TSDTNH',
 # 151 Depreciation
 # 170 Luu chuyen tien te thuan cua hoat dong dau tu]
 # 171 Tien chi de mua TSCD
+# 172 Tien thanh ly TSCD
 # 184 Co tuc da tra
 
 # DANH SACH CAC COT TRONG BCTC
@@ -111,6 +149,12 @@ rm(colNames_BCTC)
 dMerged <- merge(dBCTC, MP, by = 'Year')
 dMerged <- dMerged %>% arrange(desc(dMerged$Exchange), dMerged$Firm, dMerged$Year)
 
+dMerged <- merge(dMerged, df_m2, by = 'Year')
+dMerged <- dMerged %>% arrange(desc(dMerged$Exchange), dMerged$Firm, dMerged$Year)
+
+dMerged <- merge(dMerged, EstimateM2, by = 'Year')
+dMerged <- dMerged %>% arrange(desc(dMerged$Exchange), dMerged$Firm, dMerged$Year)
+
 dSOE <- read.csv(PATH_SOE)
 colnames(dSOE) <- c('Firm', 'Year', 'Bool_SOE', 'Bool_Foreign')
 dMerged <- merge(dMerged,dSOE, by = c('Firm', 'Year'))
@@ -126,7 +170,7 @@ dMarketCap$MarketCap <-  dMarketCap$MarketCap * 1000000000
 dMerged <- merge(dMerged,dMarketCap, by = c('Firm', 'Year'))
 
 rm(MP, dSOE,dBranch, dMarketCap, PATH_MARKETCAP, PATH_SOE, PATH_BRANCH)
-
+rm(df_m2, EstimateM2)
 
 
 #-----{ XU LY DU LIEU HOI QUY }-----
@@ -135,7 +179,7 @@ rm(MP, dSOE,dBranch, dMarketCap, PATH_MARKETCAP, PATH_SOE, PATH_BRANCH)
 df_temp <- dMerged %>% group_by(Firm)
 
 # LAY NHUNG COT CAN THIET
-columns_select <- c('Firm', 'Year','Nganh', 'Bool_SOE')
+columns_select <- c('Firm', 'Year','Nganh', 'Bool_SOE', 'M2Est')
 
 # CHANGE IN 25/2/2023 - SIZE / LN (tts/(10^6)) # CAPEX: ktr lai cong thuc # INVEST2 sai bien
 # THEM BIEN MOI
@@ -157,12 +201,13 @@ columns_new <- list('TSXXDD = XDDDT2015 + DDDH',
                     
                     'lagINVEST1 = lag(INVEST1,1)',
                     'lagINVEST2 = lag(INVEST2,1)',
-                    'lagMPDep = lag(( MP_HighDep + MP_LowDep)/2,1)',
-                    'lagMPLend = lag(( MP_HighLendSBV + MP_LowLendSBV)/2,1)',
+                    'lagMP = -lag(M2Est,1)', # THAY DOI GIUA BIEN M2Growth VA M2Est
+                    #'lagMPDep = lag(( MP_HighDep + MP_LowDep)/2,1)',
+                    #'lagMPLend = lag(( MP_HighLendSBV + MP_LowLendSBV)/2,1)',
                     
                     # MP WITHOUT LAG
-                    'MPDep = (MP_HighDep + MP_LowDep)/2',
-                    'MPLend = (MP_HighLendSBV + MP_LowLendSBV)/2',
+                    #'MPDep = (MP_HighDep + MP_LowDep)/2',
+                    #'MPLend = (MP_HighLendSBV + MP_LowLendSBV)/2',
                     
                     # CAC BIEN DELTA VA SQR
                     'deltaINVEST1 = INVEST1 - lag(INVEST1,1)',
@@ -176,9 +221,9 @@ columns_new <- list('TSXXDD = XDDDT2015 + DDDH',
                     'GROWTH = (CF-lag(CF))/lag(CF)',
                     
                     # BIEN TICH
-                    'MPCF = lagMPDep * CASHFLOW',
-                    'MPCASH = lagMPDep * CASH',
-                    'deltaCASHMP = lagMPDep * deltaCASH',
+                    'MPCF = lagMP * CASHFLOW',
+                    'MPCASH = lagMP * CASH',
+                    'deltaCASHMP = lagMP * deltaCASH',
                     
                     # TOBIN Q
                     'BV = TTS-NPT-TSCDVH',
@@ -209,7 +254,7 @@ for (x in columns_new) {
  
 dREGC <- df_temp %>% 
   select(all_of(columns_select)) %>% 
-  subset(lagMPDep != 'NA' & 
+  subset(lagMP != 'NA' & 
            lagINVEST1 != 'NA' & 
            lagINVEST1 != '-Inf' & 
            INVEST1 != '-Inf' & 
@@ -218,8 +263,8 @@ dREGC <- df_temp %>%
 
 # WINSOR MP
 
-dtemp1 <- dREGC %>% subset(select=-c(Firm,Year, lagMPDep))
-dtemp2 <- dREGC %>% subset(select=c(Firm,Year,lagMPDep))
+dtemp1 <- dREGC %>% subset(select=-c(Firm,Year, lagMP))
+dtemp2 <- dREGC %>% subset(select=c(Firm,Year,lagMP))
 dtemp1 <- winsor(dtemp1,trim = 0.01)
 dREGC <- cbind(dtemp2,dtemp1)
 rm(dtemp1,dtemp2)
@@ -232,8 +277,8 @@ rm(lhs,rhs,x,columns_select,df_temp,columns_new)
 
 depVar1 <- 'INVEST1'
 depVar2 <- 'INVEST2'
-indepVar <- c('lagINVEST1+ lagMPDep+ LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year) + Firm',
-              'lagINVEST2+ lagMPDep+ LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year) + Firm')
+indepVar <- c('lagINVEST1+ lagMP+ LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year) + Firm',
+              'lagINVEST2+ lagMP+ LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year) + Firm')
 
 regOLS1 <- lm(formula = paste0(depVar1,'~',indepVar[1]),data=dREGC)
 regOLS1_formula <- cluster.vcov(regOLS1, ~ Firm + Year)
@@ -264,8 +309,8 @@ remove(depVar1, depVar2,indepVar, regOLS1, regOLS2, regOLS1_formula, regOLS2_for
 # I : I
 
 devar   <- c('INVEST1', 'INVEST2')
-indeVar <- c('lagMPDep+ CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)'
-             ,'lagMPDep+ CASH + MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)')
+indeVar <- c('lagMP+ CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)'
+             ,'lagMP+ CASH + MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)')
 conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)')
 
 
@@ -301,7 +346,7 @@ rm(REGBase11, REGBase12, REGBase21, REGBase22,REG11,REG12,REG13,REG14,REG21,REG2
 # CHINH INDEPVAR : Thay doi as.factor(Year), Firm, Nganh -> Chon to hop tot nhat # Dong 286, 293 chon to hop tot nhat phu hop voi ky vong. 
 
 devar   <- c('INVEST1', 'INVEST2')
-indeVar <- 'lagMPDep+ CASH+ MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year) + Firm'
+indeVar <- 'lagMP+ CASH+ MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year) + Firm'
 conditionVar <- c('Bool_SOE == 1','Bool_SOE == 0')
 
 for (i in 1:2) {
@@ -317,14 +362,14 @@ for (i in 1:2) {
 Table4 <- list(REG11,REG12,
                REG21,REG22)
 
-rm(REG11,REG12,REG21,REG22, indeVar, devar, conditionVar,i,M,x,reg)
+rm(REG11,REG12,REG21,REG22, indeVar, devar, conditionVar,i,M,x,reg, reg_formula)
 
 
 
 #-----{ CASH-CASH FLOW SENSITIVITY }------
 
 devar   <- c('deltaCASH')
-indepVar <- c('CASHFLOW + lagMPDep + MPCF + SIZE + deltaNWC + deltaSDEBT + Q + CAPEX + Firm + as.factor(Year)')
+indepVar <- c('CASHFLOW + lagMP + MPCF + SIZE + deltaNWC + deltaSDEBT + Q + CAPEX + Firm + as.factor(Year)')
 conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)','SIZE <= median(SIZE)', 'SIZE > median(SIZE)','Bool_SOE == 1','Bool_SOE == 0')
 
 for (x in 1:6){
@@ -353,8 +398,8 @@ rm(x,
 
 # CAUTIONS: deltaCASH duoc them vao bien doc lap, nhung trong mo hinh trong bai tham khao goc ko co
 devar   <- c('deltaINVEST1', 'deltaINVEST2')
-indepVar <- c('deltaCASH + INVEST1 + sqrINVEST1 +  lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)', 
-              'deltaCASH + INVEST2 + sqrINVEST2 +  lagMPDep + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)' )
+indepVar <- c('deltaCASH + INVEST1 + sqrINVEST1 +  lagMP + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)', 
+              'deltaCASH + INVEST2 + sqrINVEST2 +  lagMP + deltaCASHMP + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)' )
 
 conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)','SIZE <= median(SIZE)', 'SIZE > median(SIZE)','Bool_SOE == 1','Bool_SOE == 0')
 
@@ -382,14 +427,16 @@ Table7 <- list(REG1, REG2,
                REG11,REG12,REG13,REG14, REG15, REG16,
                REG21,REG22,REG23,REG24, REG25, REG26)
 
-rm(REG1,REG2,REG11,REG12,REG13,REG14,REG15, REG16,REG21,REG22,REG23,REG24,REG25, REG26, indepVar, devar, conditionVar,i,M,x, reg)
+rm(REG1,REG2,REG11,REG12,REG13,REG14,REG15, REG16,
+   REG21,REG22,REG23,REG24,REG25, REG26, indepVar, devar, conditionVar,i,M,x, reg, reg_formula,
+   REG1_formula, REG2_formula)
 
 
 
 #-------{ Monetary policy, cash holding and investment efficiencies. }-----------
 
 devar   <- c('INVEST1', 'INVEST2')
-indepVar <- c('Q + CASH + lagMPDep + CASHQ + CASHQMP + CRISIS + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Tangible + Bool_SOE + Firm + as.factor(Year)')
+indepVar <- c('Q + CASH + lagMP + CASHQ + CASHQMP + CRISIS + LEV + SIZE + ROA + CASH + CASHFLOW + GROWTH + Tangible + Bool_SOE + Firm + as.factor(Year)')
 
 conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)','SIZE <= median(SIZE)', 'SIZE > median(SIZE)','Bool_SOE == 1','Bool_SOE == 0')
 
@@ -416,14 +463,16 @@ Table8 <- list(REG1, REG2,
                REG11,REG12,REG13,REG14, REG15, REG16,
                REG21,REG22,REG23,REG24, REG25, REG26)
 
-rm(REG1,REG2,REG11,REG12,REG13,REG14,REG15, REG16,REG21,REG22,REG23,REG24,REG25, REG26, indepVar, devar, conditionVar,i,M,x, reg)
+rm(REG1,REG2,REG11,REG12,REG13,REG14,REG15, REG16,REG21,REG22,REG23,REG24,REG25, REG26, indepVar, devar, conditionVar,
+   i,M,x, reg, reg_formula,
+   REG1_formula,REG2_formula)
 
 
 
 #-------{ CRISIS }-----------
 
 devar   <- c('INVEST1', 'INVEST2')
-indepVar <- c('lagMPDep+ CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)')
+indepVar <- c('lagMP + CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)')
 
 conditionVar <- c('CRISIS == 0', 'CRISIS == 1')
 
@@ -447,7 +496,7 @@ rm(REG11,REG12,REG21,REG22, indepVar, devar, conditionVar,i,M,x, reg)
 
 # TABLE 1
 
-Table1 <- dREGC %>% select(INVEST1, INVEST2, lagINVEST1, lagINVEST2, lagMPDep, LEV, SIZE, ROA, CASH, Bool_SOE) %>% as.data.frame()
+Table1 <- dREGC %>% select(INVEST1, INVEST2, lagINVEST1, lagINVEST2, lagMP, LEV, SIZE, ROA, CASH, Bool_SOE) %>% as.data.frame()
 stargazer(Table1, title = "Table 1. Variable definitions and descriptive statistics",
           summary = T,
           summary.stat =c("n","mean","median", "min", "max", "sd"), digits = 4,
