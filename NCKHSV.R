@@ -1,5 +1,4 @@
 #---------{ SET DUONG DAN, KHAI BAO THU VIEN }-------
-# Branch 2.2
 
 setwd('C:\\Users\\Admin\\Desktop\\Project\\Python\\Pj-FinProDataSort')
 
