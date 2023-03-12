@@ -90,6 +90,7 @@ EstimateM2 <- subset(EstimateM2, EstimateM2$Year >= 2008)
 
 rm(M2,PATH_M2,PATH_GDP,BienPhuThuoc, BienDocLap1, BienDocLap2, BienDocLap3, reg.c, df_gdp)
 
+
 #-----{ XU LY DATA BCTC }--------
 
 # KHAI BAO DUONG DAN
@@ -97,6 +98,8 @@ PATH_BCTC = 'Output/dp_BCTC.csv'
 PATH_SOE = 'Output/SOE.csv'
 PATH_BRANCH = 'Output/Branch.csv'
 PATH_MARKETCAP = 'Output/MarketCap.csv'
+PATH_OUTSTANDINGSHARES = 'Output/OutstandingShares.csv'
+PATH_FTD = 'Output/FTD.csv'
 
 # CAC COT CAN LAY
 colNames_select = c('Ticker', 'Year','Exchange','1', '2', '5',
@@ -144,6 +147,8 @@ colnames(dBCTC) <- colNames_decrypt
 rm(colNames_decrypt,colNames_select,PATH_BCTC)
 rm(colNames_BCTC)
 
+
+
 #-----{ MERGE DU LIEU KHAC }-------
 
 dMerged <- merge(dBCTC, MP, by = 'Year')
@@ -169,7 +174,20 @@ dMarketCap <- dMarketCap %>% subset(Year <= 2021 & Year >= 2008)
 dMarketCap$MarketCap <-  dMarketCap$MarketCap * 1000000000
 dMerged <- merge(dMerged,dMarketCap, by = c('Firm', 'Year'))
 
-rm(MP, dSOE,dBranch, dMarketCap, PATH_MARKETCAP, PATH_SOE, PATH_BRANCH)
+dOutstandingShares <- read.csv(PATH_OUTSTANDINGSHARES)
+colnames(dOutstandingShares) <- c('Firm', 'Year', 'OutstandingShares')
+dOutstandingShares <- dOutstandingShares %>% subset(Year <= 2021 & Year >= 2008)
+dOutstandingShares$OutstandingShares <-  dOutstandingShares$OutstandingShares * 1000000000
+dMerged <- merge(dMerged,dOutstandingShares, by = c('Firm', 'Year'))
+
+dFTD <- read.csv(PATH_FTD)
+dFTD <- dFTD %>% select(c(1,3))
+colnames(dFTD) <- c('Firm', 'FTDYear')
+dMerged <- merge(dMerged, dFTD, by = c('Firm'))
+
+dMerged <- dMerged %>% arrange(desc(dMerged$Exchange), dMerged$Firm, dMerged$Year)
+
+rm(MP, dSOE,dBranch, dMarketCap,dOutstandingShares, dFTD, PATH_MARKETCAP, PATH_SOE, PATH_BRANCH, PATH_OUTSTANDINGSHARES, PATH_FTD)
 rm(df_m2, EstimateM2)
 
 
@@ -238,7 +256,24 @@ columns_new <- list('TSXXDD = XDDDT2015 + DDDH',
                     'KZ = -1.001909* (CF/BV) +0.2826389* Q -39.3678 *(Div/BV) -1.314759 * ((TVTDT+TSDTNH)/BV) + 3.139193 * ((NNH+NDH)/TTS)',
                     
                     # CRISIS
-                    'CRISIS = case_when(Year >= 2008 & Year <= 2010 ~ 1, Year > 2010 ~ 0)'
+                    'CRISIS = case_when(Year >= 2008 & Year <= 2010 ~ 1, Year > 2010 ~ 0)',
+                    
+                    
+                    # TINH UNDER-INVEST, OVER-INVEST
+                    # EPS
+                    'EPS = NI/OutstandingShares',
+                    'lagEPS = lag(EPS,1)',
+                    
+                    # AGE (Tinh tu nam cong ty len san ck)
+                    'AGE = ln(Year - FTDYear)',
+                    'lagAGE = lag(AGE,1)',
+                    
+                    # lag LEV, lagGROWTH, lagSIZE, lagCAPEX, lagCASH
+                    'lagLEV = lag(LEV,1)',
+                    'lagGROWTH = lag(GROWTH,1)',
+                    'lagSIZE = lag(SIZE,1)',
+                    'lagCAPEX = lag(CAPEX,1)',
+                    'lagCASH = lag(CASH,1)'
                     )
 
 # CAUTIONS: Nho chu y khoang trang khi them bien
@@ -251,7 +286,16 @@ for (x in columns_new) {
   print(x)
 }
 
- 
+# TINH TOAN MUC DO HIEU QUA VIEC DAU TU OVERINVEST, UNDERINVEST
+
+df_reg <- df_temp %>% select(Firm, Year,CAPEX,lagCAPEX, lagCASH, lagAGE, lagEPS, lagGROWTH, lagLEV,lagSIZE)
+df_reg <- df_reg %>%  mutate_all(funs(ifelse(is.na(.) | is.infinite(.),0,.)))
+
+reg.c <- lm(CAPEX ~ lagCAPEX+ lagCASH + lagAGE + lagEPS + lagGROWTH + lagLEV + lagSIZE + as.factor(Year) + Firm, df_reg)
+df_reg <- cbind(df_reg,residuals(reg.c))
+
+rm(df_reg,reg.c)
+
 dREGC <- df_temp %>% 
   select(all_of(columns_select)) %>% 
   subset(lagMP != 'NA' & 
@@ -260,6 +304,7 @@ dREGC <- df_temp %>%
            INVEST1 != '-Inf' & 
            INVEST1 != 'NaN' & 
            lagINVEST1 != 'NaN')
+
 
 # WINSOR MP
 
@@ -270,7 +315,6 @@ dREGC <- cbind(dtemp2,dtemp1)
 rm(dtemp1,dtemp2)
 
 rm(lhs,rhs,x,columns_select,df_temp,columns_new)
-
 
 
 #-----{ HOI QUY }-------
@@ -294,19 +338,6 @@ Table2 <- list(regOLS1,regOLS2)
 remove(depVar1, depVar2,indepVar, regOLS1, regOLS2, regOLS1_formula, regOLS2_formula)
 
 #-----{ FINANCIAL CONSTRAINTS }------
-
-# TO HOP
-# FY : FY
-# FY : YI
-# FY : I
-
-# YI : FY
-# YI : YI
-# YI : I
-
-# I : FY
-# I : YI
-# I : I
 
 devar   <- c('INVEST1', 'INVEST2')
 indeVar <- c('lagMP+ CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)'
@@ -340,6 +371,10 @@ Table3 <- list(REGBase11, REGBase12, REGBase21, REGBase22,
 
 rm(REGBase11, REGBase12, REGBase21, REGBase22,REG11,REG12,REG13,REG14,REG21,REG22,REG23,REG24, indeVar, devar, conditionVar,i,M,x,y,z,reg, reg_formula)
 
+
+#-----{ TINH TOAN MUC DO HIEU QUA VIEC DAU TU }--------
+
+reg.c <- lm(CAPEX ~ lag(CAPEX,1)+ CASH + lag(AGE,1) + lag(EPS,1) + lag(GROWTH,1) + lag(LEV,1) + lag(SIZE,1) + as.factor(Year) + Firm)
 
 #-----{ CORPORATE INVESTMENT: SOEs vs non.SOEs }------------- 
 # CHANGE 25/2/2023
@@ -469,28 +504,6 @@ rm(REG1,REG2,REG11,REG12,REG13,REG14,REG15, REG16,REG21,REG22,REG23,REG24,REG25,
 
 
 
-#-------{ CRISIS }-----------
-
-devar   <- c('INVEST1', 'INVEST2')
-indepVar <- c('lagMP + CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + as.factor(Year)')
-
-conditionVar <- c('CRISIS == 0', 'CRISIS == 1')
-
-
-for (i in 1:2) {
-  for (x in 1:2){
-    M  <- formula(paste0( devar[i],"~", indepVar))
-    reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
-    assign(paste0('REG',i,x),reg);
-  }
-}
-
-Table9 <- list(REG11,REG12,
-               REG21,REG22)
-
-
-rm(REG11,REG12,REG21,REG22, indepVar, devar, conditionVar,i,M,x, reg)
-
 #-----{ BANG KET QUA }----------------------------------------------------------
 
 
@@ -556,25 +569,45 @@ stargazer(Table8, type = 'text', column.labels = c('All Sample','All Sample', 'K
           intercept.bottom = T, style = 'all', title = 'Table 8 Monetary policy, cash holding and investment efficiencies..', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
-# TABLE 9 TEST TABLE
 
-stargazer(Table8, type = 'text', column.labels = c('Non-CRISIS', 'CRISIS'),
-          omit = c('Year','Firm','CRISIS', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Tangible', 'Bool_SOE'), align = TRUE, out = 'Table9.htm',
-          intercept.bottom = T, style = 'all', title = 'Table 9', digits = 3, notes.align = 'c', notes.append = T,
-          report = 'v*c*t')
 
-#------{ LEGACY }---------------------------------------------------------------
+#----{ FINANCIAL CONSTRAIN WITH NEW SIZE MEASURING }----
+
+devar   <- c('INVEST1', 'INVEST2')
+indeVar <- c('lagMP+ CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)'
+             ,'lagMP+ CASH + MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)')
+conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)', 'SIZE <= quantile(SIZE,0.3333)', 'SIZE >= quantile(SIZE, 0.6666)')
+
 
 for (i in 1:2) {
-  M  <- formula(paste( devar[i],"~", indevar))
-  reg <- lm(M, data=subset(df_test, BoolGov == 1))
-  R2 <- round(summary(reg)$adj.r.squared,4); assign(paste0("R2Adj",i), R2)
-  
-  # Xu ly phuong sai thay doi
-  reg_formula <- cluster.vcov(reg, ~ NGANH)
-  reg <- coeftest(reg, reg_formula)
-  assign(paste0("reg",i), reg); 
+  for (x in 1:6){
+    M  <- formula(paste( devar[i],"~", indeVar[2]))
+    reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+    reg_formula <- cluster.vcov(reg, ~ Firm + Year )
+    reg <- coeftest(reg, reg_formula)
+    assign(paste0('REG',i,x),reg);
+  }
 }
+
+for (y in 1:2) {
+  for (z in 1:2) {
+    M  <- formula(paste( devar[y],"~", indeVar[z]))
+    reg <- lm(M, data=subset(dREGC))
+    reg_formula <- cluster.vcov(reg, ~ Firm + Year )
+    reg <- coeftest(reg, reg_formula)
+    assign(paste0('REGBase',y,z),reg);
+  }
+}
+
+Table4 <- list(REGBase11, REGBase12, REGBase21, REGBase22,
+               REG11,REG12,REG13,REG14, REG15, REG16,
+               REG21,REG22,REG23,REG24, REG25, REG26)
+rm(REGBase11, REGBase12, REGBase21, REGBase22,
+   REG11,REG12,REG13,REG14, REG15, REG16,
+   REG21,REG22,REG23,REG24, REG25, REG26)
+
+stargazer(Table4, type = 'text', out = 'testtable4.htm', style = 'all',
+          omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'))
 
 
 
