@@ -292,9 +292,14 @@ df_reg <- df_temp %>% select(Firm, Year,CAPEX,lagCAPEX, lagCASH, lagAGE, lagEPS,
 df_reg <- df_reg %>%  mutate_all(funs(ifelse(is.na(.) | is.infinite(.),0,.)))
 
 reg.c <- lm(CAPEX ~ lagCAPEX+ lagCASH + lagAGE + lagEPS + lagGROWTH + lagLEV + lagSIZE + as.factor(Year) + Firm, df_reg)
-df_reg <- cbind(df_reg,residuals(reg.c))
+df_reg <- cbind(df_reg,residuals(reg.c)) %>% rename('Invef' = '...11') %>% select(Firm,Year,Invef) 
+df_temp <- merge(df_temp,df_reg, by = c('Firm', 'Year'))
 
-rm(df_reg,reg.c)
+toRemove <- c('EPS','AGE','lagCAPEX', 'lagCASH','lagAGE', 'lagEPS', 'lagGROWTH', 'lagLEV', 'lagSIZE')
+columns_select <- setdiff(columns_select,toRemove)
+columns_select <- c(columns_select, 'Invef')
+
+rm(df_reg,reg.c, toRemove)
 
 dREGC <- df_temp %>% 
   select(all_of(columns_select)) %>% 
@@ -372,9 +377,41 @@ Table3 <- list(REGBase11, REGBase12, REGBase21, REGBase22,
 rm(REGBase11, REGBase12, REGBase21, REGBase22,REG11,REG12,REG13,REG14,REG21,REG22,REG23,REG24, indeVar, devar, conditionVar,i,M,x,y,z,reg, reg_formula)
 
 
-#-----{ TINH TOAN MUC DO HIEU QUA VIEC DAU TU }--------
+#-----{ OVER-UNDER-INEFFICIENCY INVEST }--------
 
-reg.c <- lm(CAPEX ~ lag(CAPEX,1)+ CASH + lag(AGE,1) + lag(EPS,1) + lag(GROWTH,1) + lag(LEV,1) + lag(SIZE,1) + as.factor(Year) + Firm)
+devar   <- c('INVEST1', 'INVEST2')
+indeVar <- c('lagMP+ CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)'
+             ,'lagMP+ CASH + MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)')
+conditionVar <- c('Invef < 0', 'Invef > 0')
+
+
+for (i in 1:2) {
+  for (x in 1:2){
+    M  <- formula(paste( devar[i],"~", indeVar[2]))
+    reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+    reg_formula <- cluster.vcov(reg, ~ Firm + Year )
+    reg <- coeftest(reg, reg_formula)
+    assign(paste0('REG',i,x),reg);
+  }
+}
+
+for (y in 1:2) {
+  for (z in 1:2) {
+    M  <- formula(paste( devar[y],"~", indeVar[z]))
+    reg <- lm(M, data=subset(dREGC))
+    reg_formula <- cluster.vcov(reg, ~ Firm + Year )
+    reg <- coeftest(reg, reg_formula)
+    assign(paste0('REGBase',y,z),reg);
+  }
+}
+
+Table5 <- list(REGBase11, REGBase12, REGBase21, REGBase22,
+               REG11, REG12,
+               REG21, REG22)
+
+rm(REGBase11, REGBase12, REGBase21, REGBase22,REG11,REG12,REG21,REG22, indeVar, devar, conditionVar,i,M,x,y,z,reg, reg_formula)
+
+
 
 #-----{ CORPORATE INVESTMENT: SOEs vs non.SOEs }------------- 
 # CHANGE 25/2/2023
@@ -544,7 +581,13 @@ stargazer(Table4, type = 'text', column.labels = c('SOE', 'Non-SOE','SOE', 'Non-
           intercept.bottom = T, style = 'all', title = 'Table 4 Corporate investment: SOEs vs. non-SOEs.', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
+# TABLE 5
 
+stargazer(Table5, type = 'text', column.labels = c('All Sample [1]','All Sample [1]','All Sample [2]','All Sample [2]','Under Invest [1]', 'Over Invest [1]','Under Invest [2]', 'OverInvest [2]'), out = 'Table5-TestTable.htm',
+          covariate.labels = c('MP'),
+          omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), align = TRUE, 
+          intercept.bottom = T, style = 'all', title = 'Table 5.', digits = 3, notes.align = 'c', notes.append = T,
+          report = 'v*c*t')
 
 # TABLE 6
 
@@ -606,7 +649,7 @@ rm(REGBase11, REGBase12, REGBase21, REGBase22,
    REG11,REG12,REG13,REG14, REG15, REG16,
    REG21,REG22,REG23,REG24, REG25, REG26)
 
-stargazer(Table4, type = 'text', out = 'testtable4.htm', style = 'all',
+stargazer(Table4, type = 'text', out = 'Table4-TestTable.htm', style = 'all',
           omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'))
 
 
