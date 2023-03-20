@@ -2,6 +2,7 @@
 
 setwd('C:\\Users\\Admin\\Desktop\\Project\\Python\\Pj-FinProDataSort')
 
+library(gplots)
 library(dplyr)
 library(openxlsx)
 library(stargazer)
@@ -161,7 +162,8 @@ dMerged <- merge(dMerged, EstimateM2, by = 'Year')
 dMerged <- dMerged %>% arrange(desc(dMerged$Exchange), dMerged$Firm, dMerged$Year)
 
 dSOE <- read.csv(PATH_SOE)
-colnames(dSOE) <- c('Firm', 'Year', 'Bool_SOE', 'Bool_Foreign')
+colnames(dSOE) <- c('Firm', 'Year', 'Bool_SOE', 'Bool_Foreign', 'BoolSOEControl', 'BoolSOELargeShareholder',
+                    'BoolForeignControl', 'BoolForeignShareholder')
 dMerged <- merge(dMerged,dSOE, by = c('Firm', 'Year'))
 
 dBranch <- read.csv(PATH_BRANCH)
@@ -197,7 +199,9 @@ rm(df_m2, EstimateM2)
 df_temp <- dMerged %>% group_by(Firm)
 
 # LAY NHUNG COT CAN THIET
-columns_select <- c('Firm', 'Year','Nganh', 'Bool_SOE', 'M2Est')
+columns_select <- c('Firm', 'Year','Nganh', 'Bool_SOE', 'M2Est', 'Bool_Foreign', 
+                    'BoolSOEControl', 'BoolSOELargeShareholder',
+                    'BoolForeignControl', 'BoolForeignShareholder')
 
 # CHANGE IN 25/2/2023 - SIZE / LN (tts/(10^6)) # CAPEX: ktr lai cong thuc # INVEST2 sai bien
 # THEM BIEN MOI
@@ -238,14 +242,25 @@ columns_new <- list('TSXXDD = XDDDT2015 + DDDH',
                     'CASHFLOW = CF/TTS',
                     'GROWTH = (CF-lag(CF))/lag(CF)',
                     
+                    # BIEN LAG
+                    'lagCASH = lag(CASH,1)',
+                    'lagLEV = lag(LEV,1)',
+                    'lagSIZE = lag(SIZE,1)',
+                    'lagROA = lag(ROA,1)',
+                    'lagCASHFLOW = lag(CASHFLOW,1)',
+                    'lagGROWTH = lag(GROWTH,1)',
+                    'lagTangible = lag(Tangible,1)',
+                    'lagBool_SOE = lag(Bool_SOE)',
+                    
                     # BIEN TICH
                     'MPCF = lagMP * CASHFLOW',
-                    'MPCASH = lagMP * CASH',
+                    'MPCASH = lagMP * lagCASH',
                     'deltaCASHMP = lagMP * deltaCASH',
                     
                     # TOBIN Q
                     'BV = TTS-NPT-TSCDVH',
                     'Q = MarketCap/BV',
+                    'lagQ = lag(Q,1)',
                     
                     # BIEN TICH VOI TOBIN Q
                     'CASHQ = CASH * Q',
@@ -314,14 +329,24 @@ dREGC <- df_temp %>%
 
 # WINSOR MP
 
-dtemp1 <- dREGC %>% subset(select=-c(Firm,Year, lagMP))
-dtemp2 <- dREGC %>% subset(select=c(Firm,Year,lagMP))
+dtemp1 <- dREGC %>% subset(select=-c(Firm,Year, lagMP, Bool_SOE, Bool_Foreign, 
+                                     BoolSOEControl, BoolSOELargeShareholder,
+                                     BoolForeignControl, BoolForeignShareholder))
+
+dtemp2 <- dREGC %>% subset(select=c(Firm,Year, lagMP, Bool_SOE, Bool_Foreign, 
+                                    BoolSOEControl, BoolSOELargeShareholder,
+                                    BoolForeignControl, BoolForeignShareholder))
 dtemp1 <- winsor(dtemp1,trim = 0.01)
 dREGC <- cbind(dtemp2,dtemp1)
 rm(dtemp1,dtemp2)
 
 rm(lhs,rhs,x,columns_select,df_temp,columns_new)
 
+
+#-----{ KIEM TRA DU LIEU HOI QUY}-----
+
+plotmeans(INVEST1 ~ lagMP, data= dREGC)
+ggplot(data = dREGC, mapping = aes(x = INVEST1, y = MPCASH, color = 'Orange')) +geom_point()+ theme(legend.position = "bottom")
 
 #-----{ HOI QUY KET QUA CHINH }-------
 
@@ -430,6 +455,34 @@ Table4 <- list(REG11,REG12,
 
 rm(REG11,REG12,REG21,REG22, indeVar, devar, conditionVar,i,M,x,reg, reg_formula)
 
+
+
+#-----{ CORPORATE INVESTMENT: Control SOEs and Large-shareholder SOEs, Control Foreign and Large-shareholder Foregin}-------------
+
+devar   <- c('INVEST1', 'INVEST2')
+indeVar <- 'lagMP+ CASH+ MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + BoolSOEControl +BoolSOELargeShareholder +
+                    BoolForeignControl+ BoolForeignShareholder + as.factor(Year) + Firm'
+
+conditionVar <- c('BoolSOEControl == 1','BoolSOELargeShareholder == 1',
+                  'BoolForeignControl == 1', 'BoolForeignShareholder == 1',
+                  'BoolSOELargeShareholder == 0', 'BoolForeignShareholder == 0' )
+
+for (i in 1:2) {
+  for (x in 1:6){
+    M  <- formula(paste( devar[i],"~", indeVar))
+    reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+    reg_formula <- cluster.vcov(reg, ~ Firm + Year)
+    reg <- coeftest(reg, reg_formula)
+    assign(paste0('REG',i,x),reg);
+  }
+}
+
+Table4.2.1 <- list(REG11,REG12, REG13, REG14, REG15, REG16)
+Table4.2.2 <- list(REG21,REG22, REG23, REG24, REG25, REG26)
+
+rm(REG11,REG12, REG13, REG14, REG15, REG16,
+   REG21,REG22, REG23, REG24, REG25, REG26, 
+   indeVar, devar, conditionVar,i,M,x,reg, reg_formula)
 
 
 #-----{ CASH-CASH FLOW SENSITIVITY }------
@@ -546,16 +599,20 @@ stargazer(Table1, title = "Table 1. Variable definitions and descriptive statist
           summary.stat =c("n","mean","median", "min", "max", "sd"), digits = 4,
           type = 'text', style = 'all', out = 'Table1.htm')
 
+# TABLE 2 Correlation coefficients Table
+stargazer(cor(dREGC[,c(3,8,9,10,11,12,13,14,15,16,18,27,32,33,36)]), type = 'text', style = 'all',
+          title = ' Table2 Correlation coefficients',
+          out = 'Table2-New.htm')
 
-# TABLE 2
+# TABLE 3
 
 stargazer(Table2, type = 'text',
           omit = c('Year', 'Firm'), align = TRUE,
           column.labels = c('Model 1', 'Model 2'),
           intercept.bottom = T, style = 'all', 
-          title = 'Table 2 Baseline results - monetary policy effects on corporate investment', 
+          title = 'Table 3 Baseline results - monetary policy effects on corporate investment', 
           digits = 3, notes.align = 'c', notes.append = T,
-          report = 'v*c*t', out = 'Table2.htm')
+          report = 'v*c*t', out = 'Table3-New.htm')
 
 
 # TABLE 3
@@ -569,10 +626,26 @@ stargazer(Table3, type = 'text', column.labels = c('All Sample [1]','All Sample 
 
 # TABLE 4
 
-stargazer(Table4, type = 'text', column.labels = c('SOE', 'Non-SOE','SOE', 'Non-SOE'), out = 'Table4.htm',
+stargazer(Table4, type = 'text', column.labels = c('SOE', 'Non-SOE','SOE', 'Non-SOE'), out = 'Table6-New.htm',
           covariate.labels = c('MP'),
           omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), align = TRUE, 
-          intercept.bottom = T, style = 'all', title = 'Table 4 Corporate investment: SOEs vs. non-SOEs.', digits = 3, notes.align = 'c', notes.append = T,
+          intercept.bottom = T, style = 'all', title = 'Table 6 Corporate investment: SOEs vs. non-SOEs.', digits = 3, notes.align = 'c', notes.append = T,
+          report = 'v*c*t')
+
+# TABLE 4.2
+
+stargazer(Table4.2.1, type = 'text', 
+          column.labels = c('Control-SOE', 'Largest-Shareholder SOE','Control Foreign', 'Largest-Shareholder Foreign', 'Non-SOEs', 'Non-Foregin shareholder'), out = 'Table6.2.1.htm',
+          covariate.labels = c('MP'), dep.var.labels = c('Invest1'),
+          omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), align = TRUE, 
+          intercept.bottom = T, style = 'all', title = 'Table 6 Corporate investment: Control-SOE vs. Largest-Shareholder SOE', digits = 3, notes.align = 'c', notes.append = T,
+          report = 'v*c*t')
+
+stargazer(Table4.2.2, type = 'text', 
+          column.labels = c('Control-SOE', 'Largest-Shareholder SOE','Control Foreign', 'Largest-Shareholder Foreign', 'Non-SOEs', 'Non-Foregin shareholder'), out = 'Table6.2.2.htm',
+          covariate.labels = c('MP'), dep.var.labels = c('Invest2'),
+          omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), align = TRUE, 
+          intercept.bottom = T, style = 'all', title = 'Table 6 Corporate investment: Control-SOE vs. Largest-Shareholder SOE', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
 # TABLE 5
@@ -586,24 +659,24 @@ stargazer(Table5, type = 'text', column.labels = c('Inefficiency Invest','Under 
 # TABLE 6
 
 stargazer(Table6, type = 'text', column.labels = c('All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
-          omit = c('Year','Firm','SIZE', 'deltaNWC', 'deltaSDEBT', 'Q','CAPEX'), align = TRUE, out = 'Table6.htm',
-          intercept.bottom = T, style = 'all', title = 'Table 6 Monetary policy and cash-cash flow sensitivity.', digits = 3, notes.align = 'c', notes.append = T,
+          omit = c('Year','Firm','SIZE', 'deltaNWC', 'deltaSDEBT', 'Q','CAPEX'), align = TRUE, out = 'Table7-New.htm',
+          intercept.bottom = T, style = 'all', title = 'Table 7 Monetary policy and cash-cash flow sensitivity.', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
 
 # TABLE 7
 
 stargazer(Table7, type = 'text', column.labels = c('All Sample','All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
-          omit = c('Year','Firm','LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), align = TRUE, out = 'Table7.htm',
-          intercept.bottom = T, style = 'all', title = 'Table 7 Monetary policy, cash holding and investment smoothing.', digits = 3, notes.align = 'c', notes.append = T,
+          omit = c('Year','Firm','LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), align = TRUE, out = 'Table8-New.htm',
+          intercept.bottom = T, style = 'all', title = 'Table 8 Monetary policy, cash holding and investment smoothing.', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
 
 # TABLE 8
 
 stargazer(Table8, type = 'text', column.labels = c('All Sample','All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
-          omit = c('Year','Firm','CRISIS', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Tangible', 'Bool_SOE'), align = TRUE, out = 'Table8.htm',
-          intercept.bottom = T, style = 'all', title = 'Table 8 Monetary policy, cash holding and investment efficiencies..', digits = 3, notes.align = 'c', notes.append = T,
+          omit = c('Year','Firm','CRISIS', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Tangible', 'Bool_SOE'), align = TRUE, out = 'Table9-New.htm',
+          intercept.bottom = T, style = 'all', title = 'Table 9 Monetary policy, cash holding and investment efficiencies..', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
 
@@ -641,10 +714,16 @@ Table4 <- list(REGBase11, REGBase12, REGBase21, REGBase22,
                REG21,REG22,REG23,REG24, REG25, REG26)
 rm(REGBase11, REGBase12, REGBase21, REGBase22,
    REG11,REG12,REG13,REG14, REG15, REG16,
-   REG21,REG22,REG23,REG24, REG25, REG26)
+   REG21,REG22,REG23,REG24, REG25, REG26,
+   indeVar, devar, conditionVar,
+   i,M,x, reg, reg_formula, y,z)
 
 stargazer(Table4, type = 'text', out = 'Table4-TestTable.htm', style = 'all',
-          omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'))
+          title = 'Table 4 Financial constraints, cash holdings and corporate investment.',
+          column.labels = c('All Sample [1]','All Sample [1]', 'All Sample [2]','All Sample [2]','KZ-Low [1]', 'KZ-High [1]', 'Size-Low [1]', 'Size-High [1]','Size < 33% [1]',
+                            'Size > 66% [1]','KZ-Low [2]', 'KZ-High [2]', 'Size-Low [2]', 'Size-High [2]','Size < 33% [2]', 'Size > 66% [2]'),
+          omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), 
+          report = 'v*c*t')
 
 
 
