@@ -13,10 +13,13 @@ require(multiwayvcov)
 require(lmtest)
 library(SciViews)
 require(psych)
+
+
+
 #-----{ TINH TOAN MP }--------
 
 # ESTIMATE MP USING INTEREST RATE
-# KHAI BAO DUONG DAN
+## KHAI BAO DUONG DAN
 PATH_GDP = 'RCode/MP/LS.csv'
 PATH_INTEREST = 'Output/Interest.csv'
 
@@ -26,7 +29,7 @@ df_interest = read.csv(PATH_INTEREST)
 
 df_gdp <- df_gdp %>% subset(Year >= 2008) %>% as.data.frame()
 
-
+## THAY DOI TEN CAC COT
 dep_col_names <- c(paste0("HighDep", c("Low1", "1to6", "6to12", "High12")),
                    paste0("LowDep", c("Low1", "1to6", "6to12", "High12")))
 lend_col_names <- c(paste0("HighLend", c("SGov", "SCom", "LGov")),
@@ -38,6 +41,7 @@ colnames(df_interest) <- col_names
 MP <- seq(2008,2021) %>% as.data.frame()
 colnames(MP) <- c('Year')
 
+## Tien hanh hoi quy MP
 for (i in seq(7,12)){
   BienPhuThuoc <- df_interest[[c(i)]]
   BienDocLap1 <- df_gdp$Inflation 
@@ -76,13 +80,14 @@ M2$M2Growth <- (M2$M2 - lag(M2$M2,1))/ lag(M2$M2)
 M2$lagM2Growth <- lag(M2$M2Growth,1)
 M2 <- M2 %>% subset(Year >= 2002)
 
-
+## CHUAN BI CAC BIEN DE HOI QUY
 BienPhuThuoc <- M2$M2Growth
 BienDocLap1 <- M2$lagM2Growth
 BienDocLap2 <- df_gdp$Inflation 
 BienDocLap3 <- df_gdp$OutGap 
 reg.c <- lm(BienPhuThuoc ~ BienDocLap1+BienDocLap2+BienDocLap3)
 
+## LAY PHAN DU CUA MO HINH HOI QUY
 EstimateM2 <- reg.c$fitted.values %>% as.data.frame()
 EstimateM2$Year <- seq(2002,2021)
 colnames(EstimateM2) <- c('M2Est', 'Year')
@@ -161,27 +166,32 @@ dMerged <- dMerged %>% arrange(desc(dMerged$Exchange), dMerged$Firm, dMerged$Yea
 dMerged <- merge(dMerged, EstimateM2, by = 'Year')
 dMerged <- dMerged %>% arrange(desc(dMerged$Exchange), dMerged$Firm, dMerged$Year)
 
+# DU LIEU VE SOE, FOREIGN SHAREHOLDER
 dSOE <- read.csv(PATH_SOE)
 colnames(dSOE) <- c('Firm', 'Year', 'Bool_SOE', 'Bool_Foreign', 'BoolSOEControl', 'BoolSOELargeShareholder',
                     'BoolForeignControl', 'BoolForeignShareholder')
 dMerged <- merge(dMerged,dSOE, by = c('Firm', 'Year'))
 
+# DU LIEU VE NGANH CUA DOANH NGHIEP
 dBranch <- read.csv(PATH_BRANCH)
 colnames(dBranch) <- c('Firm', 'Nganh')
 dMerged <- merge(dMerged, dBranch, by = c('Firm'))
 
+# DU LIEU VE VON HOA THI TRUONG
 dMarketCap <- read.csv(PATH_MARKETCAP)
 colnames(dMarketCap) <- c('Firm', 'Year', 'MarketCap')
 dMarketCap <- dMarketCap %>% subset(Year <= 2021 & Year >= 2008)
 dMarketCap$MarketCap <-  dMarketCap$MarketCap * 1000000000
 dMerged <- merge(dMerged,dMarketCap, by = c('Firm', 'Year'))
 
+# DU LIEU VE SO LUONG CP DANG LUU HANH
 dOutstandingShares <- read.csv(PATH_OUTSTANDINGSHARES)
 colnames(dOutstandingShares) <- c('Firm', 'Year', 'OutstandingShares')
 dOutstandingShares <- dOutstandingShares %>% subset(Year <= 2021 & Year >= 2008)
 dOutstandingShares$OutstandingShares <-  dOutstandingShares$OutstandingShares * 1000000000
 dMerged <- merge(dMerged,dOutstandingShares, by = c('Firm', 'Year'))
 
+# DU LIEU VE NGAY DAU TIEN NIEM YET LEN SAN CK
 dFTD <- read.csv(PATH_FTD)
 dFTD <- dFTD %>% select(c(1,3))
 colnames(dFTD) <- c('Firm', 'FTDYear')
@@ -317,6 +327,7 @@ columns_select <- c(columns_select, 'Invef')
 
 rm(df_reg,reg.c, toRemove)
 
+# LOAI BO NHUNG YEU TO NA, INF
 dREGC <- df_temp %>% 
   select(all_of(columns_select)) %>% 
   subset(lagMP != 'NA' & 
@@ -401,6 +412,45 @@ Table3 <- list(REGBase11, REGBase12, REGBase21, REGBase22,
                REG21,REG22,REG23,REG24)
 
 rm(REGBase11, REGBase12, REGBase21, REGBase22,REG11,REG12,REG13,REG14,REG21,REG22,REG23,REG24, indeVar, devar, conditionVar,i,M,x,y,z,reg, reg_formula)
+
+
+#----{ FINANCIAL CONSTRAIN WITH NEW SIZE MEASURING }----
+
+devar   <- c('INVEST1', 'INVEST2')
+indeVar <- c('lagMP+ CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)'
+             ,'lagMP+ CASH + MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)')
+conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)', 'SIZE <= quantile(SIZE,0.3333)', 'SIZE >= quantile(SIZE, 0.6666)')
+
+
+for (i in 1:2) {
+  for (x in 1:6){
+    M  <- formula(paste( devar[i],"~", indeVar[2]))
+    reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
+    reg_formula <- cluster.vcov(reg, ~ Firm + Year )
+    reg <- coeftest(reg, reg_formula)
+    assign(paste0('REG',i,x),reg);
+  }
+}
+
+for (y in 1:2) {
+  for (z in 1:2) {
+    M  <- formula(paste( devar[y],"~", indeVar[z]))
+    reg <- lm(M, data=subset(dREGC))
+    reg_formula <- cluster.vcov(reg, ~ Firm + Year )
+    reg <- coeftest(reg, reg_formula)
+    assign(paste0('REGBase',y,z),reg);
+  }
+}
+
+Table4 <- list(REGBase11, REGBase12, REGBase21, REGBase22,
+               REG11,REG12,REG13,REG14, REG15, REG16,
+               REG21,REG22,REG23,REG24, REG25, REG26)
+rm(REGBase11, REGBase12, REGBase21, REGBase22,
+   REG11,REG12,REG13,REG14, REG15, REG16,
+   REG21,REG22,REG23,REG24, REG25, REG26,
+   indeVar, devar, conditionVar,
+   i,M,x, reg, reg_formula, y,z)
+
 
 
 #-----{ OVER-UNDER-INEFFICIENCY INVEST }--------
@@ -615,16 +665,16 @@ stargazer(Table2, type = 'text',
           report = 'v*c*t', out = 'Table3-New.htm')
 
 
-# TABLE 3
+# TABLE 4
 
-stargazer(Table3, type = 'text', column.labels = c('All Sample [1]','All Sample [1]','All Sample [2]','All Sample [2]','KZ-Low', 'KZ-High', 'SIZE-Big', 'SIZE-Small','KZ-Low', 'KZ-High', 'SIZE-Big', 'SIZE-Small'),
-          covariate.labels = c('MP'),
-          omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), align = TRUE, out = 'Table3.htm',
-          intercept.bottom = T, style = 'all', title = 'Table 3 Financial constraints, cash holdings and corporate investment.', digits = 3, notes.align = 'c', notes.append = T,
+stargazer(Table4, type = 'text', out = 'Table4-TestTable.htm', style = 'all',
+          title = 'Table 4 Financial constraints, cash holdings and corporate investment.',
+          column.labels = c('All Sample [1]','All Sample [1]', 'All Sample [2]','All Sample [2]','KZ-Low [1]', 'KZ-High [1]', 'Size-Low [1]', 'Size-High [1]','Size < 33% [1]',
+                            'Size > 66% [1]','KZ-Low [2]', 'KZ-High [2]', 'Size-Low [2]', 'Size-High [2]','Size < 33% [2]', 'Size > 66% [2]'),
+          omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), 
           report = 'v*c*t')
 
-
-# TABLE 4
+# TABLE 6
 
 stargazer(Table4, type = 'text', column.labels = c('SOE', 'Non-SOE','SOE', 'Non-SOE'), out = 'Table6-New.htm',
           covariate.labels = c('MP'),
@@ -632,7 +682,7 @@ stargazer(Table4, type = 'text', column.labels = c('SOE', 'Non-SOE','SOE', 'Non-
           intercept.bottom = T, style = 'all', title = 'Table 6 Corporate investment: SOEs vs. non-SOEs.', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
-# TABLE 4.2
+# TABLE 6.2
 
 stargazer(Table4.2.1, type = 'text', 
           column.labels = c('Control-SOE', 'Largest-Shareholder SOE','Control Foreign', 'Largest-Shareholder Foreign', 'Non-SOEs', 'Non-Foregin shareholder'), out = 'Table6.2.1.htm',
@@ -656,7 +706,7 @@ stargazer(Table5, type = 'text', column.labels = c('Inefficiency Invest','Under 
           intercept.bottom = T, style = 'all', title = 'Table 5.', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
-# TABLE 6
+# TABLE 7
 
 stargazer(Table6, type = 'text', column.labels = c('All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
           omit = c('Year','Firm','SIZE', 'deltaNWC', 'deltaSDEBT', 'Q','CAPEX'), align = TRUE, out = 'Table7-New.htm',
@@ -664,7 +714,7 @@ stargazer(Table6, type = 'text', column.labels = c('All Sample', 'KZ-Low', 'KZ-H
           report = 'v*c*t')
 
 
-# TABLE 7
+# TABLE 8
 
 stargazer(Table7, type = 'text', column.labels = c('All Sample','All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
           omit = c('Year','Firm','LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), align = TRUE, out = 'Table8-New.htm',
@@ -672,58 +722,13 @@ stargazer(Table7, type = 'text', column.labels = c('All Sample','All Sample', 'K
           report = 'v*c*t')
 
 
-# TABLE 8
+# TABLE 9
 
 stargazer(Table8, type = 'text', column.labels = c('All Sample','All Sample', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE', 'KZ-Low', 'KZ-High', 'Size-Low', 'Size-High', 'SOE', 'Non-SOE'),
           omit = c('Year','Firm','CRISIS', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Tangible', 'Bool_SOE'), align = TRUE, out = 'Table9-New.htm',
           intercept.bottom = T, style = 'all', title = 'Table 9 Monetary policy, cash holding and investment efficiencies..', digits = 3, notes.align = 'c', notes.append = T,
           report = 'v*c*t')
 
-
-
-#----{ FINANCIAL CONSTRAIN WITH NEW SIZE MEASURING }----
-
-devar   <- c('INVEST1', 'INVEST2')
-indeVar <- c('lagMP+ CASH  +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)'
-             ,'lagMP+ CASH + MPCASH +LEV + SIZE + ROA  + CASHFLOW + GROWTH + Q + Tangible + Bool_SOE + Firm + as.factor(Year)')
-conditionVar <- c('KZ <= median(KZ)','KZ > median(KZ)', 'SIZE > median(SIZE)', 'SIZE <= median(SIZE)', 'SIZE <= quantile(SIZE,0.3333)', 'SIZE >= quantile(SIZE, 0.6666)')
-
-
-for (i in 1:2) {
-  for (x in 1:6){
-    M  <- formula(paste( devar[i],"~", indeVar[2]))
-    reg <- lm(M, data=subset(dREGC, eval(parse(text= conditionVar[x]))))
-    reg_formula <- cluster.vcov(reg, ~ Firm + Year )
-    reg <- coeftest(reg, reg_formula)
-    assign(paste0('REG',i,x),reg);
-  }
-}
-
-for (y in 1:2) {
-  for (z in 1:2) {
-    M  <- formula(paste( devar[y],"~", indeVar[z]))
-    reg <- lm(M, data=subset(dREGC))
-    reg_formula <- cluster.vcov(reg, ~ Firm + Year )
-    reg <- coeftest(reg, reg_formula)
-    assign(paste0('REGBase',y,z),reg);
-  }
-}
-
-Table4 <- list(REGBase11, REGBase12, REGBase21, REGBase22,
-               REG11,REG12,REG13,REG14, REG15, REG16,
-               REG21,REG22,REG23,REG24, REG25, REG26)
-rm(REGBase11, REGBase12, REGBase21, REGBase22,
-   REG11,REG12,REG13,REG14, REG15, REG16,
-   REG21,REG22,REG23,REG24, REG25, REG26,
-   indeVar, devar, conditionVar,
-   i,M,x, reg, reg_formula, y,z)
-
-stargazer(Table4, type = 'text', out = 'Table4-TestTable.htm', style = 'all',
-          title = 'Table 4 Financial constraints, cash holdings and corporate investment.',
-          column.labels = c('All Sample [1]','All Sample [1]', 'All Sample [2]','All Sample [2]','KZ-Low [1]', 'KZ-High [1]', 'Size-Low [1]', 'Size-High [1]','Size < 33% [1]',
-                            'Size > 66% [1]','KZ-Low [2]', 'KZ-High [2]', 'Size-Low [2]', 'Size-High [2]','Size < 33% [2]', 'Size > 66% [2]'),
-          omit = c('Year','Firm', 'LEV', 'SIZE', 'ROA', 'CASHFLOW', 'GROWTH', 'Q', 'Tangible', 'Bool_SOE'), 
-          report = 'v*c*t')
 
 
 
